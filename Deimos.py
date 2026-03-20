@@ -50,7 +50,7 @@ from src.deimosgui import GUIKeys
 from src.tokenizer import tokenize
 from src.deimoslang import vm
 
-gui.set_global_icon("..\\Deimos-logo.ico")
+gui.set_global_icon("Deimos-logo.ico")
 gui.PySimpleGUI.SUPPRESS_ERROR_POPUPS = True
 gui.PySimpleGUI.SUPPRESS_RAISE_KEY_ERRORS = True
 

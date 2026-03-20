@@ -2,8 +2,16 @@
 
 # Tutorial
 ## Instructions
+### Running from Executable
 1. Be sure all your clients are logged onto the desired wizard.
-2. Run the ```Deimos.exe``` by double clicking it.
+2. Run the `Deimos.exe` by double-clicking it.
+
+### Running from Source
+1. Install Python 3.10+
+2. Install [Git](https://git-scm.com/) (required for some dependencies)
+3. Clone the repository.
+4. Run `Setup.bat` to automatically install all dependencies.
+5. Launch the tool using `Run Deimos.bat`.
 
 ## Hotkeys
 - Look in ```Deimos-config.ini``` to see what hotkeys are mapped.
