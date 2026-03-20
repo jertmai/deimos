@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title Deimos - Automatic Setup
+title Deimos - All-in-One Installer
 cd /d "%~dp0"
 
 echo [Deimos] Starting setup...
@@ -19,8 +19,6 @@ if not exist python_installer.exe goto download_error
 echo [Deimos] Installing Python (silent mode)...
 start /wait python_installer.exe /quiet PrependPath=1
 del python_installer.exe
-
-:: Manually set path for this session
 set "PATH=%PATH%;%USERPROFILE%\AppData\Local\Programs\Python\Python312\;%USERPROFILE%\AppData\Local\Programs\Python\Python312\Scripts\"
 echo [Deimos] Python installed!
 
@@ -49,31 +47,48 @@ echo [Deimos] Git is ready.
 :: --- 3. CREATE VIRTUAL ENVIRONMENT ---
 echo.
 echo [Deimos] Building virtual environment...
-python -m venv venv
-if %errorlevel% neq 0 (
-    echo [ERROR] Failed to create virtual environment. 
-    echo Please make sure Python was installed with 'Add to PATH' checked.
-    pause
-    exit /b
+if not exist venv (
+    python -m venv venv
 )
 
-:: --- 4. INSTALL LIBRARIES ---
+:: --- 4. INSTALL LIBRARIES & PYINSTALLER ---
 echo [Deimos] Installing project libraries...
 venv\Scripts\python -m pip install --upgrade pip
-venv\Scripts\python -m pip install -r requirements.txt
+venv\Scripts\python -m pip install -r requirements.txt pyinstaller
 
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Library installation failed. 
-    echo Check your internet connection and try running Setup.bat again.
     pause
     exit /b
 )
 
+:: --- 5. BUILD THE STANDALONE EXE ---
+if exist Deimos.exe goto finish
+
+echo.
+echo [Deimos] COMPILING STANDALONE APP...
+echo (This will create your "Deimos" engine app. Please wait...)
+echo.
+venv\Scripts\pyinstaller --onefile --noconsole --icon=Deimos-logo.ico Deimos.py
+
+:: Move the EXE to the root and clean up
+if exist dist\Deimos.exe (
+    move /y dist\Deimos.exe .
+    rd /s /q build
+    rd /s /q dist
+    del /f /q Deimos.spec
+    echo.
+    echo [Deimos] SUCCESS! Your "Deimos.exe" app has been created!
+) else (
+    echo [WARNING] EXE creation failed. You can still use "Run Deimos.bat".
+)
+
+:finish
 echo.
 echo [Deimos] ============================================
-echo [Deimos] SUCCESS! Deimos is fully installed.
-echo [Deimos] Double-click "Run Deimos.bat" to play!
+echo [Deimos] INSTALLATION COMPLETE!
+echo [Deimos] You can now use "Deimos.exe" to start the app!
 echo [Deimos] ============================================
 echo.
 pause
@@ -82,6 +97,5 @@ exit /b
 :download_error
 echo.
 echo [ERROR] Failed to download installers. 
-echo Please check your internet connection and run Setup.bat again.
 pause
 exit /b
