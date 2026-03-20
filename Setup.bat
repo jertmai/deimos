@@ -7,7 +7,6 @@ echo [Deimos] Starting setup...
 echo.
 
 :: --- 1. CHECK/INSTALL PYTHON ---
-echo [Deimos] Checking for Python...
 python --version >nul 2>&1
 if %errorlevel% equ 0 goto python_installed
 
@@ -55,17 +54,20 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-:: --- 5. CREATE THE "DEIMOS APP" SHORTCUT ---
-echo [Deimos] Creating your "Deimos App" icon...
+:: --- 5. CREATE THE "CLEAN" DEIMOS APP ICON ---
+echo [Deimos] Creating your "Deimos App" icon (Direct Launch)...
 set "ShortcutPath=%~dp0\Deimos.lnk"
-set "TargetPath=%~dp0\Run Deimos.bat"
+set "PythonPath=%~dp0\venv\Scripts\pythonw.exe"
+set "ScriptPath=%~dp0\Deimos.py"
 set "IconPath=%~dp0\Deimos-logo.ico"
+set "WorkingDir=%~dp0"
 
-powershell -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%ShortcutPath%'); $Shortcut.TargetPath = '%TargetPath%'; $Shortcut.IconLocation = '%IconPath%'; $Shortcut.Save()"
+:: This creates a shortcut that runs the GUI directly with ZERO terminal window
+powershell -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%ShortcutPath%'); $Shortcut.TargetPath = '%PythonPath%'; $Shortcut.Arguments = '\"%ScriptPath%\"'; $Shortcut.IconLocation = '%IconPath%'; $Shortcut.WorkingDirectory = '%WorkingDir%'; $Shortcut.Save()"
 
 echo.
 echo [Deimos] SUCCESS! Deimos is fully installed and your App Launcher is ready.
-echo [Deimos] You can now double-click the "Deimos" app icon to start!
+echo [Deimos] You can now double-click the "Deimos" icon to start the GUI directly.
 echo.
 pause
 exit /b
