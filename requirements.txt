@@ -8,4 +8,3 @@ pypresence>=4.3.0
 pywin32>=306
 pyyaml>=6.0.1
 ./wheels/PySimpleGUI-4.60.5-py3-none-any.whl
-pyinstaller>=6.4.0
