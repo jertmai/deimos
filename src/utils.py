@@ -1327,10 +1327,13 @@ async def class_snapshot(
     current_depth: int = 0, 
     max_depth: int = 25, 
     types_blacklist: tuple = (inspect._empty, Window, wizwalker.memory.DynamicWindow), 
-    edge_cases: dict = {}
+    edge_cases: dict = {},
+    seen_objects: Optional[dict] = None
 ) -> dict:
+    if seen_objects is None:
+        seen_objects = {}
     '''Recursively calls every function in a class, async or not. Assembles a dict containing the outputs for these, referenced by function name. Only does functions that have no arguments.'''
-    snapshot_data = {}
+    snapshot_data = {"_original": instance}
 
     # Limit recursion depth to prevent stack overflow
     if current_depth >= max_depth:  # If we have reached or exceeded max depth, return an empty dict
@@ -1393,10 +1396,10 @@ async def class_snapshot(
                         snapshot_v = o_v
 
                         if not _is_valid_type(o_k):  # If this isn't a built-in type, recurse
-                            snapshot_k = await class_snapshot(o_k, recurse, current_depth, max_depth, types_blacklist, edge_cases)
+                            snapshot_k = await class_snapshot(o_k, recurse, current_depth, max_depth, types_blacklist, edge_cases, seen_objects)
 
                         if not _is_valid_type(o_v):
-                            snapshot_v = await class_snapshot(o_v, recurse, current_depth, max_depth, types_blacklist, edge_cases)
+                            snapshot_v = await class_snapshot(o_v, recurse, current_depth, max_depth, types_blacklist, edge_cases, seen_objects)
 
                         output_dict[snapshot_k] = snapshot_v
 
@@ -1409,13 +1412,13 @@ async def class_snapshot(
                         if _is_valid_type(o):
                             output_iterable.append(o)
                         else:
-                            o_snapshot = await class_snapshot(o, recurse, current_depth, max_depth, types_blacklist, edge_cases)
+                            o_snapshot = await class_snapshot(o, recurse, current_depth, max_depth, types_blacklist, edge_cases, seen_objects)
                             output_iterable.append(o_snapshot)
 
                     snapshot_data[name] = type(output)(output_iterable)
 
             else:
-                snapshot_data[name] = await class_snapshot(output, recurse, current_depth, max_depth, types_blacklist, edge_cases)
+                snapshot_data[name] = await class_snapshot(output, recurse, current_depth, max_depth, types_blacklist, edge_cases, seen_objects)
 
     return snapshot_data
 

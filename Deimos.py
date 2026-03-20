@@ -25,6 +25,7 @@ import re
 from pypresence import AioPresence
 from src.command_parser import execute_flythrough, parse_command
 from src.auto_pet import nomnom
+from src.auto_cantrip import auto_cantrip_loop
 from src.drop_logger import logging_loop
 # from src.combat_new import Fighter
 from src.stat_viewer import total_stats
@@ -41,6 +42,7 @@ from src import discsdk
 from wizwalker.extensions.wizsprinter.wiz_navigator import toZoneDisplayName, toZone
 from wizwalker.extensions.wizsprinter.sprinty_combat import SprintyCombat
 from src.config_combat import StrCombatConfigProvider, delegate_combat_configs, default_config
+from src.ai_combat import AICombat
 from typing import List
 
 from src import deimosgui
@@ -116,6 +118,8 @@ def read_config(config_name : str):
 	rpc_status = parser.getboolean('settings', 'rich_presence', fallback=True)
 	drop_status = parser.getboolean('settings', 'drop_logging', fallback=True)
 	anti_afk_status = parser.getboolean('settings', 'use_anti_afk', fallback=True)
+	global close_game_on_exit
+	close_game_on_exit = False # Hard-disabled to prevent accidental game closures
 
 
 	# Hotkeys
@@ -201,6 +205,8 @@ def read_config(config_name : str):
 	kill_minions_first = parser.getboolean('combat', 'kill_minions_first', fallback=False)
 	automatic_team_based_combat = parser.getboolean('combat', 'automatic_team_based_combat', fallback=False)
 	discard_duplicate_cards = parser.getboolean('combat', 'discard_duplicate_cards', fallback=True)
+	global toggle_ai_combat_key
+	toggle_ai_combat_key = parser.get('hotkeys', 'toggle_ai_combat', fallback='F11')
 
 
 	# Auto Pet Settings
@@ -234,6 +240,7 @@ while True:
 
 speed_status = False
 combat_status = False
+smart_combat_status = False
 dialogue_status = False
 sigil_status = False
 freecam_status = False
@@ -242,6 +249,9 @@ questing_status = False
 auto_pet_status = False
 auto_potion_status = False
 side_quest_status = False
+cantrip_status = False
+ai_combat_status = False
+ai_combat_pre55_status = False
 tool_status = True
 original_client_locations = dict()
 
@@ -255,9 +265,12 @@ auto_pet_task: asyncio.Task = None
 sigil_task: asyncio.Task = None
 dialogue_task: asyncio.Task = None
 combat_task: asyncio.Task = None
+smart_combat_task: asyncio.Task = None
 tp_task: asyncio.Task = None
 speed_task: asyncio.Task = None
 pet_task: asyncio.Task = None
+cantrip_task: asyncio.Task = None
+ai_combat_task: asyncio.Task = None
 
 bot_task: asyncio.Task = None
 flythrough_task: asyncio.Task = None
@@ -374,7 +387,7 @@ def hotkey_button(name: str, auto_size: bool = False, text_color: str = gui_text
 	return gui.Button(name, button_color=(text_color, button_color), auto_size_button=auto_size)
 
 
-async def mass_key_press(foreground_client : Client, background_clients : list[Client], pressed_key_name: str, key, duration : float = 0.1, debug : bool = False):
+async def mass_key_press(foreground_client : Client, background_clients : list[Client], pressed_key_name: str, key, duration : float = 0.1, debug : bool = True):
 	# sends a given keystroke to all clients, handles foreground client seperately
 	if debug and foreground_client:
 		key_name = str(key)
@@ -401,7 +414,7 @@ async def sync_camera(client: Client, xyz: XYZ = None, yaw: float = None):
 	await camera.write_yaw(yaw)
 
 
-async def xyz_sync(foreground_client : Client, background_clients : list[Client], turn_after : bool = True, debug : bool = False):
+async def xyz_sync(foreground_client : Client, background_clients : list[Client], turn_after : bool = True, debug : bool = True):
 	# syncs client XYZ up with the one in foreground, doesn't work across zones or realms
 	if background_clients:
 		if debug:
@@ -421,7 +434,7 @@ async def xyz_sync(foreground_client : Client, background_clients : list[Client]
 		await asyncio.sleep(0.3)
 
 
-async def navmap_teleport(foreground_client : wizwalker.Client, background_clients : list[Client], mass_teleport: bool = False, debug : bool = False, xyz: XYZ = None):
+async def navmap_teleport(foreground_client : wizwalker.Client, background_clients : list[Client], mass_teleport: bool = False, debug : bool = True, xyz: XYZ = None):
 	# teleports foreground client or all clients using the navmap.
 	# nested function that allows for the gathering of the teleports for each client
 	async def client_navmap_teleport(client: Client, xyz: XYZ = None):
@@ -510,7 +523,8 @@ async def tool_finish():
 	await listener.clear()
 	for p in walker.clients:
 		try:
-			await p.close()
+			# Softly deactivate hooks with a timeout to prevent game hangs/crashes
+			await asyncio.wait_for(p.deactivate_hooks(), timeout=1.5)
 		except:
 			pass
 	# await walker.close()
@@ -609,7 +623,97 @@ async def main():
 				if debug:
 					logger.debug(f'{toggle_auto_combat_key} key pressed, enabling auto combat.')
 				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('CombatStatus', 'Enabled')))
-				combat_task = asyncio.create_task(try_task_coro(combat_loop, walker.clients, True))
+				combat_task = asyncio.create_task(combat_loop())
+
+	async def toggle_smart_combat_hotkey(debug: bool = True):
+		global smart_combat_task
+		global gui_send_queue
+
+		for client in walker.clients:
+			if not hasattr(client, 'smart_combat_status'):
+				client.smart_combat_status = False
+			client.smart_combat_status ^= True
+
+		if not freecam_status:
+			if smart_combat_task is not None and not smart_combat_task.cancelled():
+				smart_combat_task.cancel()
+				smart_combat_task = None
+				if debug:
+					logger.debug(f'Disabling smart combat.')
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('Smart CombatStatus', 'Disabled')))
+
+			else:
+				if debug:
+					logger.debug(f'Enabling smart combat.')
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('Smart CombatStatus', 'Enabled')))
+				smart_combat_task = asyncio.create_task(smart_combat_loop())
+
+	async def toggle_ai_combat_hotkey(debug: bool = True):
+		global ai_combat_task
+		global gui_send_queue
+
+		if not freecam_status:
+			if ai_combat_task is not None and not ai_combat_task.cancelled():
+				ai_combat_task.cancel()
+				ai_combat_task = None
+				for client in walker.clients:
+					client.ai_combat_status = False
+					client.ai_combat_pre55_status = False
+				if debug:
+					logger.debug(f"Disabling AI combat.")
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI CombatStatus', 'Disabled')))
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI (Pre-55)Status', 'Disabled')))
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI (Lvl 55+)Status', 'Disabled')))
+			else:
+				if debug:
+					logger.debug(f"Enabling AI combat.")
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI CombatStatus', 'Enabled')))
+				ai_combat_task = asyncio.create_task(ai_combat_loop())
+
+	async def toggle_ai_combat_pre55_hotkey(debug: bool = True):
+		global ai_combat_task
+		global gui_send_queue
+
+		# Check if we should toggle OFF
+		is_already_on = any(getattr(c, 'ai_combat_pre55_status', False) and getattr(c, 'ai_combat_status', False) for c in walker.clients)
+		if is_already_on and ai_combat_task is not None:
+			await toggle_ai_combat_hotkey() # Turn off entirely
+			return
+
+		for client in walker.clients:
+			client.ai_combat_pre55_status = True
+			client.ai_combat_status = True
+		
+		if ai_combat_task is None or ai_combat_task.cancelled():
+			ai_combat_task = asyncio.create_task(ai_combat_loop())
+			
+		gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI (Pre-55)Status', 'Enabled')))
+		gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI (Lvl 55+)Status', 'Disabled')))
+		gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI CombatStatus', 'Enabled')))
+		logger.debug("AI Combat: Switched TO Pre-55 mode.")
+
+	async def toggle_ai_combat_55_hotkey(debug: bool = True):
+		global ai_combat_task
+		global gui_send_queue
+
+		# Check if we should toggle OFF
+		is_already_on = any(not getattr(c, 'ai_combat_pre55_status', False) and getattr(c, 'ai_combat_status', False) for c in walker.clients)
+		if is_already_on and ai_combat_task is not None:
+			await toggle_ai_combat_hotkey() # Turn off entirely
+			return
+
+		for client in walker.clients:
+			client.ai_combat_pre55_status = False
+			client.ai_combat_status = True
+		
+		if ai_combat_task is None or ai_combat_task.cancelled():
+			ai_combat_task = asyncio.create_task(ai_combat_loop())
+			
+		gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI (Lvl 55+)Status', 'Enabled')))
+		gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI (Pre-55)Status', 'Disabled')))
+		gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('AI CombatStatus', 'Enabled')))
+		logger.debug("AI Combat: Switched TO Level 55+ mode.")
+
 
 
 	async def toggle_dialogue_hotkey(side_quests: bool = False):
@@ -774,6 +878,27 @@ async def main():
 				logger.debug(f'Disabling auto potion.')
 				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('Auto PotionStatus', 'Disabled')))
 
+	async def toggle_cantrip_hotkey():
+		global cantrip_task
+		global cantrip_status
+
+		if not freecam_status:
+			cantrip_status ^= True
+			for p in walker.clients:
+				if not hasattr(p, 'cantrip_status'):
+					p.cantrip_status = False
+				p.cantrip_status ^= True
+
+			if cantrip_task is not None and not cantrip_task.cancelled():
+				logger.debug(f'Disabling cantrip hunt.')
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('Cantrip HuntStatus', 'Disabled')))
+				cantrip_task.cancel()
+				cantrip_task = None
+			else:
+				logger.debug(f'Enabling cantrip hunt.')
+				gui_send_queue.put(deimosgui.GUICommand(deimosgui.GUICommandType.UpdateWindow, ('Cantrip HuntStatus', 'Enabled')))
+				cantrip_task = asyncio.create_task(try_task_coro(lambda: auto_cantrip_loop(walker.clients, True), walker.clients, True))
+
 
 	# async def toggle_side_quests():
 	# 	global side_quest_status
@@ -793,7 +918,7 @@ async def main():
 	# 		side_quest_status = True
 
 
-	async def enable_hotkeys(exclude_freecam: bool = False, debug: bool = False):
+	async def enable_hotkeys(exclude_freecam: bool = False, debug: bool = True):
 		# adds every hotkey
 		global hotkey_status
 		if not hotkey_status:
@@ -810,6 +935,7 @@ async def main():
 			await listener.add_hotkey(Keycode[toggle_auto_dialogue_key], toggle_dialogue_hotkey, modifiers=ModifierKeys.NOREPEAT)
 			await listener.add_hotkey(Keycode[toggle_auto_dialogue_key], toggle_dialogue_side_quests_hotkey, modifiers=ModifierKeys.SHIFT | ModifierKeys.NOREPEAT)
 			await listener.add_hotkey(Keycode[toggle_auto_sigil_key], toggle_sigil_hotkey, modifiers=ModifierKeys.NOREPEAT)
+			await listener.add_hotkey(Keycode[toggle_ai_combat_key], toggle_ai_combat_hotkey, modifiers=ModifierKeys.NOREPEAT)
 			if not exclude_freecam:
 				await listener.add_hotkey(Keycode[toggle_freecam_key], toggle_freecam_hotkey, modifiers=ModifierKeys.NOREPEAT)
 				await listener.add_hotkey(Keycode[toggle_freecam_key], tp_to_freecam_hotkey, modifiers=ModifierKeys.SHIFT | ModifierKeys.NOREPEAT)
@@ -817,7 +943,7 @@ async def main():
 			hotkey_status = True
 
 
-	async def disable_hotkeys(exclude_freecam: bool = False, debug: bool = False, exclude_kill: bool = True):
+	async def disable_hotkeys(exclude_freecam: bool = False, debug: bool = True, exclude_kill: bool = True):
 		# removes every hotkey
 		global hotkey_status
 		if hotkey_status:
@@ -836,6 +962,7 @@ async def main():
 			await listener.remove_hotkey(Keycode[toggle_auto_dialogue_key], modifiers=ModifierKeys.NOREPEAT)
 			await listener.remove_hotkey(Keycode[toggle_auto_dialogue_key], modifiers=ModifierKeys.SHIFT | ModifierKeys.NOREPEAT)
 			await listener.remove_hotkey(Keycode[toggle_auto_sigil_key], modifiers=ModifierKeys.NOREPEAT)
+			await listener.remove_hotkey(Keycode[toggle_ai_combat_key], modifiers=ModifierKeys.NOREPEAT)
 			if not exclude_freecam:
 				await listener.remove_hotkey(Keycode[toggle_freecam_key], modifiers=ModifierKeys.NOREPEAT)
 				await listener.remove_hotkey(Keycode[toggle_freecam_key], modifiers=ModifierKeys.SHIFT | ModifierKeys.NOREPEAT)
@@ -924,6 +1051,55 @@ async def main():
 						await battle.wait_for_combat()
 
 		await asyncio.gather(*[async_combat(p) for p in walker.clients])
+
+	async def smart_combat_loop():
+		# waits for combat for every client and handles them seperately.
+		async def async_smart_combat(client: Client):
+			from src.smart_combat import SmartCombat
+			while True:
+				try:
+					await asyncio.sleep(1)
+					if not freecam_status:
+						while not await client.in_battle():
+							await asyncio.sleep(1)
+
+						if await client.in_battle():
+							logger.debug(f'Client {client.title} in combat, handling smart combat.')
+
+							#CONFIG COMBAT
+							battle = SmartCombat(client, StrCombatConfigProvider(client.combat_config), True)
+							await battle.wait_for_combat()
+				except Exception as e:
+					logger.error(f"Smart combat loop crashed (Auto-Restarting): {e}")
+					await asyncio.sleep(2)  # Wait for memory to stabilize before rebooting loop
+
+		await asyncio.gather(*[async_smart_combat(p) for p in walker.clients])
+
+	async def ai_combat_loop():
+		# AI combat loop
+		async def async_ai_combat(client: Client):
+			while True:
+				try:
+					await asyncio.sleep(1)
+					if not freecam_status:
+						while not await client.in_battle():
+							await asyncio.sleep(1)
+
+						if await client.in_battle():
+							logger.debug(f'Client {client.title} in combat, handling AI combat.')
+							is_pre55 = getattr(client, 'ai_combat_pre55_status', False)
+							battle = AICombat(client, StrCombatConfigProvider(client.combat_config), True, pre55_mode=is_pre55)
+							await battle.wait_for_combat()
+							
+							# After combat, check if the side deck was flagged as empty
+							if getattr(battle, 'side_deck_empty', False):
+								await battle.refill_side_deck()
+				except Exception as e:
+					logger.error(f"AI combat loop crashed (Auto-Restarting): {e}")
+					await asyncio.sleep(2)
+
+		await asyncio.gather(*[async_ai_combat(p) for p in walker.clients])
+
 
 	async def dialogue_loop():
 		# auto advances dialogue for every client, individually and concurrently
@@ -1346,6 +1522,8 @@ async def main():
 									await toggle_speed_hotkey()
 								case GUIKeys.toggle_combat:
 									await toggle_combat_hotkey()
+								case GUIKeys.toggle_smart_combat:
+									await toggle_smart_combat_hotkey()
 								case GUIKeys.toggle_dialogue:
 									await toggle_dialogue_hotkey()
 								case GUIKeys.toggle_sigil:
@@ -1356,6 +1534,14 @@ async def main():
 									await toggle_auto_pet_hotkey()
 								case GUIKeys.toggle_auto_potion:
 									await toggle_auto_potion_hotkey()
+								case GUIKeys.toggle_cantrip:
+									await toggle_cantrip_hotkey()
+								case GUIKeys.toggle_ai_combat:
+									await toggle_ai_combat_hotkey()
+								case GUIKeys.toggle_ai_combat_55:
+									await toggle_ai_combat_55_hotkey()
+								case GUIKeys.toggle_ai_combat_pre55:
+									await toggle_ai_combat_pre55_hotkey()
 								case GUIKeys.toggle_freecam:
 									await toggle_freecam_hotkey()
 								# case 'Side Quests':

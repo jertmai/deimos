@@ -217,6 +217,7 @@ class GUICommandType(Enum):
 class GUIKeys:
     toggle_speedhack = "togglespeedhack"
     toggle_combat = "togglecombat"
+    toggle_smart_combat = "togglesmartcombat"
     toggle_dialogue = "toggledialogue"
     toggle_sigil = "togglesigil"
     toggle_questing = "toggle_questing"
@@ -225,6 +226,10 @@ class GUIKeys:
     toggle_freecam = "togglefreecam"
     toggle_camera_collision = "togglecameracollision"
     toggle_show_expanded_logs = "toggleshowexpandedlogs"
+    toggle_cantrip = "togglecantrip"
+    toggle_ai_combat = "toggleaicombat"
+    toggle_ai_combat_55 = "toggleaicombat55"
+    toggle_ai_combat_pre55 = "toggleaicombatpre55"
 
     hotkey_quest_tp = "hotkeyquesttp"
     hotkey_freecam_tp = "hotkeyfreecamtp"
@@ -310,11 +315,26 @@ def create_gui(gui_theme, gui_text_color, gui_button_color, tool_name, tool_vers
     toggles: list[tuple[str, str]] = [
         (tl('Speedhack'), GUIKeys.toggle_speedhack),
         (tl('Combat'), GUIKeys.toggle_combat),
+        (tl('Smart Combat'), GUIKeys.toggle_smart_combat),
         (tl('Dialogue'), GUIKeys.toggle_dialogue),
         (tl('Sigil'), GUIKeys.toggle_sigil),
         (tl('Questing'), GUIKeys.toggle_questing),
         (tl('Auto Pet'), GUIKeys.toggle_auto_pet),
         (tl('Auto Potion'), GUIKeys.toggle_auto_potion),
+        (tl('Cantrip Hunt'), GUIKeys.toggle_cantrip),
+    ]
+    
+    # Custom section for AI Combat to allow for mode selection
+    ai_options_layout = gui.Column([
+        [gui.T("   "), hotkey_button(tl('AI (Lvl 55+)'), GUIKeys.toggle_ai_combat_55), gui.Text(tl('Disabled'), key=f'{tl("AI (Lvl 55+)")}Status', text_color=gui_text_color)],
+        [gui.T("   "), hotkey_button(tl('AI (Pre-55)'), GUIKeys.toggle_ai_combat_pre55), gui.Text(tl('Disabled'), key=f'{tl("AI (Pre-55)")}Status', text_color=gui_text_color)]
+    ], key='AI_OPTIONS', visible=False, pad=(0,0))
+
+    ai_combat_layout = [
+        [hotkey_button(tl('AI Combat'), GUIKeys.toggle_ai_combat), 
+         gui.Text(tl('Disabled'), key='AI CombatStatus', auto_size_text=False, size=(7, 1), text_color=gui_text_color),
+         gui.Text(tl('Options »'), key='AI_OP_HINT', text_color="#aaaaaa")],
+        [ai_options_layout]
     ]
     hotkeys: list[tuple[str, str]] = [
         (tl('Quest TP'), GUIKeys.hotkey_quest_tp),
@@ -327,6 +347,7 @@ def create_gui(gui_theme, gui_text_color, gui_button_color, tool_name, tool_vers
         (tl('X Press'), GUIKeys.mass_hotkey_x_press)
     ]
     toggles_layout = [[hotkey_button(name, key), gui.Text(tl('Disabled'), key=f'{name}Status', auto_size_text=False, size=(7, 1), text_color=gui_text_color)] for name, key in toggles]
+    toggles_layout += ai_combat_layout
     framed_toggles_layout = gui.Frame(tl('Toggles'), toggles_layout, title_color=gui_text_color)
     hotkeys_layout = [[hotkey_button(name, key)] for name, key in hotkeys]
     framed_hotkeys_layout = gui.Frame(tl('Hotkeys'), hotkeys_layout, title_color=gui_text_color)
@@ -700,9 +721,10 @@ def manage_gui(send_queue: queue.Queue, recv_queue: queue.Queue, gui_theme, gui_
                 send_queue.put(GUICommand(GUICommandType.AttemptedClose))
 
             # Toggles
-            case GUIKeys.toggle_speedhack | GUIKeys.toggle_combat | GUIKeys.toggle_dialogue | GUIKeys.toggle_sigil | \
+            case GUIKeys.toggle_speedhack | GUIKeys.toggle_combat | GUIKeys.toggle_smart_combat | GUIKeys.toggle_dialogue | GUIKeys.toggle_sigil | \
                 GUIKeys.toggle_questing | GUIKeys.toggle_auto_pet | GUIKeys.toggle_auto_potion | GUIKeys.toggle_freecam | \
-                GUIKeys.toggle_camera_collision | GUIKeys.toggle_show_expanded_logs:
+                GUIKeys.toggle_camera_collision | GUIKeys.toggle_show_expanded_logs | GUIKeys.toggle_cantrip | \
+                GUIKeys.toggle_ai_combat_55 | GUIKeys.toggle_ai_combat_pre55:
                 send_queue.put(GUICommand(GUICommandType.ToggleOption, event))
 
             # Copying
@@ -829,6 +851,15 @@ def manage_gui(send_queue: queue.Queue, recv_queue: queue.Queue, gui_theme, gui_
             # case 'Set Auto Pet World':
             # 	if inputs['PetWorldInput']:
             # 		send_queue.put(GUICommand(GUICommandType.SetPetWorld, (False, str(inputs['PetWorldInput']))))
+
+            case GUIKeys.toggle_ai_combat:
+                # Toggle visibility of options
+                current_visible = window['AI_OPTIONS'].visible
+                new_visible = not current_visible
+                window['AI_OPTIONS'].update(visible=new_visible)
+                window['AI_OP_HINT'].update('Options «' if not new_visible else 'Options v')
+                # Also notify backend to toggle the main AI Combat task if needed
+                send_queue.put(GUICommand(GUICommandType.ToggleOption, event))
 
             # Other
             case _:

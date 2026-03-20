@@ -142,6 +142,9 @@ individual_equipment_set_parent_path = ['WorldView', 'DeckConfiguration', 'Equip
 
 # Backpack Page Title
 backpack_title_path = ['WorldView', 'DeckConfiguration', 'InventorySpellbookPage', 'top_scroll', 'title']
+deck_config_tc_tab_path = ['WorldView', 'DeckConfiguration', 'InventorySpellbookPage', 'Tab_2']
+deck_config_sun_filter_path = ['WorldView', 'DeckConfiguration', 'InventorySpellbookPage', 'ControlSprite', 'btnFilterSun']
+deck_config_tc_list_path = ['WorldView', 'DeckConfiguration', 'InventorySpellbookPage', 'ControlSprite', 'wndTCList']
 
 # Exit Pet Leveled Up Popup
 # UNTESTED
