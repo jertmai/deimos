@@ -1,20 +1,21 @@
 @echo off
 setlocal
-title Deimos - Automatic Setup
+title Deimos - All-in-One Installer
 cd /d "%~dp0"
 
 echo [Deimos] Starting setup...
 echo.
 
 :: --- 1. CHECK/INSTALL PYTHON ---
+echo [Deimos] Checking for Python...
 python --version >nul 2>&1
 if %errorlevel% equ 0 goto python_installed
 
 echo [Deimos] Python not found. Starting auto-install...
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.2/python-3.12.2-amd64.exe' -OutFile 'python_installer.exe'"
-start /wait python_installer.exe /quiet PrependPath=1
+start /wait python_installer.exe /quiet PrependPath=1 Include_test=0
 del python_installer.exe
-set "PATH=%PATH%;%USERPROFILE%\AppData\Local\Programs\Python\Python312\;%USERPROFILE%\AppData\Local\Programs\Python\Python312\Scripts\"
+set "PATH=%PATH%;%USERPROFILE%\AppData\Local\Programs\Python\Python312\;%USERPROFILE%\AppData\Local\Programs\Python\Python312\Scripts\;C:\Program Files\Python312\;C:\Program Files\Python312\Scripts\"
 echo [Deimos] Python installed!
 
 :python_installed
@@ -29,7 +30,7 @@ echo [Deimos] Git not found. Starting auto-install...
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe' -OutFile 'git_installer.exe'"
 start /wait git_installer.exe /VERYSILENT /NORESTART
 del git_installer.exe
-set "PATH=%PATH%;C:\Program Files\Git\cmd"
+set "PATH=%PATH%;C:\Program Files\Git\cmd;C:\Program Files (x86)\Git\cmd"
 echo [Deimos] Git installed!
 
 :git_installed
@@ -37,15 +38,15 @@ echo [Deimos] Git is ready.
 
 :: --- 3. CREATE VIRTUAL ENVIRONMENT ---
 echo.
-echo [Deimos] Building environment...
-if not exist venv (
+echo [Deimos] Building virtual environment...
+if not exist venv\Scripts\python.exe (
     python -m venv venv
 )
 
-:: --- 4. INSTALL LIBRARIES ---
+:: --- 4. INSTALL LIBRARIES & PYINSTALLER ---
 echo [Deimos] Installing project libraries...
 venv\Scripts\python -m pip install --upgrade pip
-venv\Scripts\python -m pip install -r requirements.txt
+venv\Scripts\python -m pip install -r requirements.txt pyinstaller
 
 if %errorlevel% neq 0 (
     echo.
@@ -54,20 +55,40 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-:: --- 5. CREATE THE "CLEAN" DEIMOS APP ICON ---
-echo [Deimos] Creating your "Deimos App" icon (Direct Launch)...
-set "ShortcutPath=%~dp0\Deimos.lnk"
-set "PythonPath=%~dp0\venv\Scripts\pythonw.exe"
-set "ScriptPath=%~dp0\Deimos.py"
-set "IconPath=%~dp0\Deimos-logo.ico"
-set "WorkingDir=%~dp0"
-
-:: This creates a shortcut that runs the GUI directly with ZERO terminal window
-powershell -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%ShortcutPath%'); $Shortcut.TargetPath = '%PythonPath%'; $Shortcut.Arguments = '\"%ScriptPath%\"'; $Shortcut.IconLocation = '%IconPath%'; $Shortcut.WorkingDirectory = '%WorkingDir%'; $Shortcut.Save()"
+:: --- 5. BUILD THE STANDALONE EXE ---
+if exist Deimos.exe goto finish
 
 echo.
-echo [Deimos] SUCCESS! Deimos is fully installed and your App Launcher is ready.
-echo [Deimos] You can now double-click the "Deimos" icon to start the GUI directly.
+echo [Deimos] COMPILING STANDALONE APP...
+echo (This will create your "Deimos.exe" engine app. Please wait...)
 echo.
+venv\Scripts\pyinstaller --onefile --noconsole --icon=Deimos-logo.ico Deimos.py
+
+:: Move the EXE to the root and clean up
+if exist dist\Deimos.exe (
+    move /y dist\Deimos.exe .
+    rd /s /q build
+    rd /s /q dist
+    del /f /q Deimos.spec
+    echo.
+    echo [Deimos] SUCCESS! Your "Deimos.exe" app has been created!
+) else (
+    echo [WARNING] EXE creation failed. You can still use "Run Deimos.bat".
+)
+
+:finish
+echo.
+echo [Deimos] ============================================
+echo [Deimos] INSTALLATION COMPLETE!
+echo [Deimos] You can now share this folder with your friend!
+echo [Deimos] They just need to double-click "Deimos.exe" to start!
+echo [Deimos] ============================================
+echo.
+pause
+exit /b
+
+:download_error
+echo.
+echo [ERROR] Failed to download installers. 
 pause
 exit /b

@@ -1,0 +1,35 @@
+﻿python : 2026-03-11 
+10:42:14.303 | DEBUG    | 
+__main__:hooking_logic:2033 
+- Activating hooks for all 
+clients, please be patient...
+At line:1 char:1
++ python Deimos.py 2>&1 | 
+Tee-Object deimos_error.log
++ ~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (2026-03  
+  -11 10:4...e be patient.   
+ ..:String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+2026-03-11 10:42:15.446 | 
+DEBUG    | 
+__main__:main:2077 - Hooks 
+activated. Setting up 
+hotkeys...
+2026-03-11 10:42:15.548 | 
+DEBUG    | 
+__main__:main:2127 - Hotkeys 
+ready!
+2026-03-11 10:43:33.757 | 
+DEBUG    | 
+__main__:disable_hotkeys:851 
+- Client not selected, 
+stopping hotkey listener.
+2026-03-11 10:43:36.078 | 
+INFO     | 
+__main__:main:2193 - Tool 
+close triggered by user.
