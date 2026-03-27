@@ -56,9 +56,9 @@ if %errorlevel% neq 0 (
 )
 
 :: --- 5. BUILD THE STANDALONE EXE ---
-if exist Deimos.exe goto finish
 
 echo.
+echo [Deimos] Starting the build process...
 echo [Deimos] COMPILING STANDALONE APP...
 echo (This will create your "Deimos.exe" engine app. Please wait...)
 echo.

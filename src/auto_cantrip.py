@@ -12,11 +12,17 @@ completed_sites = set()
 
 async def cantrip_find_and_move(client: Client):
     try:
-        # EXTREME RANGE OVERRIDE: Unlock 20,000 unit detection horizon
+        # SUPER-EXTREME RANGE OVERRIDE: 1,000,000 unit detection horizon
         try:
             if hasattr(client, 'entity_manager'):
-                client.entity_manager.detect_range = 20000.0
+                client.entity_manager.detect_range = 1000000.0
         except: pass
+
+        # ZONE-AWARE CACHE: Reset completions if we switched worlds
+        current_zone = await client.zone.zone_id()
+        if not hasattr(client, '_last_cantrip_zone') or client._last_cantrip_zone != current_zone:
+            client._last_cantrip_zone = current_zone
+            completed_sites.clear()
 
         # ABSOLUTE ZONE RADAR: Memory sweep for all ritual variants
         entities = []
@@ -128,8 +134,8 @@ async def cantrip_find_and_move(client: Client):
         except:
             target_yaw = 0.0
             
-        stand_back_dist = 90.0
-        # Teleport to the exact standoff position calculated from the chest's rotation
+        stand_back_dist = 80.0
+        # Teleport to the exact standoff position calculated from the chest's rotation (exact straight)
         arrival_x = target_xyz.x - (stand_back_dist * math.sin(target_yaw))
         arrival_y = target_xyz.y - (stand_back_dist * math.cos(target_yaw))
         arrival_z = target_xyz.z
